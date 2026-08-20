@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Akkordy · Grifftabellen für Knopfakkordeon</title>
+<meta name="description" content="Lieder als farbige Grifftabelle für das Knopfakkordeon erfassen und als PDF ausdrucken.">
+<style>
+  :root {
+    --ink: #1a1a1a;
+    --paper: #fdfdfb;
+    --line: #d8d6cf;
+    --accent: #2b4a8b;
+    --btn-r: 21;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    background: #efeee9;
+    color: var(--ink);
+  }
+
+  /* ── Toolbar ─────────────────────────────── */
+  header.toolbar {
+    background: var(--paper);
+    border-bottom: 1px solid var(--line);
+    padding: 14px 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px 24px;
+    align-items: flex-end;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label {
+    font-size: 11px;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+    color: #6b6a63;
+  }
+  .field input[type=text] {
+    font-size: 16px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #fff;
+  }
+  #inpTitle { width: 260px; font-weight: 700; }
+  #inpBass { width: 110px; font-weight: 700; }
+  .field select {
+    font-size: 15px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: #fff;
+  }
+
+  .modes { display: flex; gap: 6px; }
+  .modes button {
+    font-size: 14px;
+    padding: 9px 14px;
+    border: 1px solid var(--line);
+    background: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .modes button.active {
+    background: var(--ink);
+    color: #fff;
+    border-color: var(--ink);
+  }
+
+  .colors { display: flex; gap: 6px; align-items: center; }
+  .chip {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    border: 2px solid transparent;
+    cursor: pointer;
+    padding: 0;
+  }
+  .chip.active { border-color: var(--ink); box-shadow: 0 0 0 2px #fff inset; }
+
+  .actions { display: flex; gap: 6px; margin-left: auto; }
+  .actions button {
+    font-size: 14px;
+    padding: 9px 14px;
+    border: 1px solid var(--line);
+    background: #fff;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .actions button.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+    font-weight: 600;
+  }
+
+  .hint {
+    max-width: 1100px;
+    margin: 14px auto 0;
+    padding: 0 20px;
+    font-size: 13px;
+    color: #6b6a63;
+  }
+
+  /* ── Blatt ───────────────────────────────── */
+  .sheet {
+    background: #fff;
+    max-width: 1160px;
+    margin: 14px auto 40px;
+    padding: 28px 32px 36px;
+    border: 1px solid var(--line);
+    box-shadow: 0 2px 14px rgba(0,0,0,.06);
+  }
+  .sheet-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    border-bottom: 3px solid var(--ink);
+    padding-bottom: 6px;
+    margin-bottom: 18px;
+  }
+  .sheet-head .t {
+    font-size: 40px;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    min-height: 48px;
+  }
+  .sheet-head .b {
+    font-size: 40px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+  .sheet-head .t:empty::before { content: "Liedname"; color: #c8c6bf; }
+
+  svg#board { width: 100%; height: auto; display: block; touch-action: manipulation; }
+
+  circle.btn {
+    fill: #fff;
+    stroke: var(--ink);
+    stroke-width: 1.6;
+    cursor: pointer;
+  }
+  circle.btn:hover { stroke-width: 3; }
+  circle.dot {
+    fill: var(--ink);
+    pointer-events: none;
+  }
+  text.lbl {
+    font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    text-anchor: middle;
+    dominant-baseline: central;
+    pointer-events: none;
+    user-select: none;
+  }
+  path.arc {
+    fill: none;
+    stroke-width: 15;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    opacity: .55;
+  }
+  body[data-mode="erase"] path.arc { cursor: pointer; pointer-events: stroke; }
+  body:not([data-mode="erase"]) path.arc { pointer-events: none; }
+  circle.pending {
+    fill: none;
+    stroke: var(--ink);
+    stroke-dasharray: 4 4;
+    stroke-width: 2.5;
+    pointer-events: none;
+  }
+
+  body[data-mode="fill"]   #board { cursor: pointer; }
+  body[data-mode="erase"]  circle.btn { cursor: cell; }
+
+  /* ── Druck ───────────────────────────────── */
+  @page { size: A4 landscape; margin: 10mm; }
+  @media print {
+    body { background: #fff; }
+    header.toolbar, .hint { display: none !important; }
+    .sheet {
+      border: none;
+      box-shadow: none;
+      max-width: none;
+      margin: 0;
+      padding: 0;
+    }
+    circle.btn:hover { stroke-width: 1.6; }
+  }
+</style>
+</head>
+<body data-mode="fill">
+
+<header class="toolbar">
+  <div class="field">
+    <label for="inpTitle">Liedname</label>
+    <input type="text" id="inpTitle" placeholder="z. B. Hulapalu">
+  </div>
+  <div class="field">
+    <label for="inpBass">Bass (ab «C»)</label>
+    <input type="text" id="inpBass" placeholder="+ 0">
+  </div>
+  <div class="field">
+    <label for="selSystem">Griffsystem</label>
+    <select id="selSystem">
+      <option value="C">C-Griff</option>
+      <option value="B">B-Griff</option>
+    </select>
+  </div>
+
+  <div class="field">
+    <label>Modus</label>
+    <div class="modes">
+      <button id="mFill" class="active">Knöpfe ausfüllen</button>
+      <button id="mArc">Akkord markieren</button>
+      <button id="mErase">Radieren</button>
+    </div>
+  </div>
+
+  <div class="field" id="colorField" style="display:none">
+    <label>Farbe · Knöpfe antippen, dann «Fertig»</label>
+    <div class="colors">
+      <button class="chip active" style="background:#7fd6a2" data-c="#7fd6a2"></button>
+      <button class="chip" style="background:#f4a9cf" data-c="#f4a9cf"></button>
+      <button class="chip" style="background:#f6c34d" data-c="#f6c34d"></button>
+      <button class="chip" style="background:#8db4f2" data-c="#8db4f2"></button>
+      <button class="chip" style="background:#f08a5d" data-c="#f08a5d"></button>
+      <button id="arcDone" style="font-size:14px;padding:6px 12px;border:1px solid var(--line);border-radius:6px;background:#fff;cursor:pointer;font-weight:600">Fertig ✓</button>
+      <button id="arcCancel" style="font-size:14px;padding:6px 12px;border:1px solid var(--line);border-radius:6px;background:#fff;cursor:pointer">Abbrechen</button>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button id="btnUndo">↩ Rückgängig</button>
+    <button id="btnClear">Alles löschen</button>
+    <button id="btnSave">Speichern (.json)</button>
+    <button id="btnLoad">Öffnen</button>
+    <input type="file" id="fileLoad" accept=".json" style="display:none">
+    <button id="btnPrint" class="primary">Drucken / PDF</button>
+  </div>
+</header>
+
+<p class="hint">
+  <strong>So geht’s:</strong> ① Knöpfe anklicken = schwarz ausfüllen (nochmals klicken = weg).
+  ② «Akkord markieren»: Farbe wählen, 2–3 Knöpfe nacheinander antippen, «Fertig» drücken → breiter Farbstrich.
+  ③ Liedname und Bass-Angabe oben eintragen. ④ «Drucken / PDF» → als PDF sichern oder direkt ausdrucken (A4 quer).
+</p>
+
+<main class="sheet">
+  <div class="sheet-head">
+    <div class="t" id="outTitle"></div>
+    <div class="b" id="outBass"></div>
+  </div>
+  <svg id="board" xmlns="http://www.w3.org/2000/svg"></svg>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  // ── Tastatur-Layouts (Diskant, 5 Reihen) ──────────────
+  // Reihenfolge der drei Tonfamilien unterscheidet C- und B-Griff.
+  // Jede Reihe: Startton + Aufwärtsschritte in kleinen Terzen.
+  var FAM = {
+    A: ["e","g","ais","cis","e","g","ais","cis","e","g","ais","cis","e","g"],          // e-Reihe
+    B: ["fis","a","c","dis","fis","a","c","dis","fis","a","c","dis","fis","a"],        // fis-Reihe
+    C: ["f","gis","h","d","f","gis","h","d","f","gis","h","d","f","gis"]               // f-Reihe
+  };
+  // Oktav-Striche (′) je Position, passend zur Vorlage des Kunden
+  function withPrimes(seq, firstPrimeAt) {
+    var out = [], primes = 0;
+    for (var i = 0; i < seq.length; i++) {
+      if (i >= firstPrimeAt && (i - firstPrimeAt) % 4 === 0) primes++;
+      out.push(seq[i] + "\u2032".repeat(primes));
+    }
+    return out;
+  }
+  var ROW_A = withPrimes(FAM.A, 3); // ais cis′ …
+  var ROW_B = withPrimes(FAM.B, 2); // c′ …
+  var ROW_C = withPrimes(FAM.C, 3); // d′ …
+
+  function layoutFor(system) {
+    if (system === "B") {
+      // B-Griff: Reihe 2 = f-Familie, Reihe 3 = fis-Familie
+      return [ROW_A, ROW_C, ROW_B, ROW_A.slice(1).concat([""]).filter(Boolean), ROW_C];
+    }
+    // C-Griff (wie Vorlage): Reihe 2 = fis-Familie, Reihe 3 = f-Familie
+    return [ROW_A, ROW_B, ROW_C, ROW_A.slice(1), ROW_B];
+  }
+
+  // ── Geometrie ─────────────────────────────
+  var R = 21, DX = 58, DY = 56, PAD = 30;
+  var svg = document.getElementById("board");
+  var NS = "http://www.w3.org/2000/svg";
+
+  var state = {
+    system: "C",
+    filled: {},        // key "r-i" -> true
+    arcs: [],          // {color, keys:[...]}
+    pending: [],       // keys während Akkord-Erfassung
+    color: "#7fd6a2",
+    mode: "fill",
+    undo: []           // Aktionen
+  };
+
+  var centers = {};    // key -> {x,y}
+
+  function build() {
+    while (svg.firstChild) svg.removeChild(svg.firstChild);
+    centers = {};
+    var rows = layoutFor(state.system);
+    var maxCols = 0;
+    rows.forEach(function (r) { maxCols = Math.max(maxCols, r.length); });
+
+    var W = PAD * 2 + (maxCols - 1) * DX + DX / 2 + R * 2;
+    var H = PAD * 2 + (rows.length - 1) * DY + R * 2;
+    svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+
+    var gArcs = document.createElementNS(NS, "g"); gArcs.id = "gArcs";
+    var gBtns = document.createElementNS(NS, "g"); gBtns.id = "gBtns";
+    svg.appendChild(gBtns);
+    svg.appendChild(gArcs); // Bögen liegen wie Leuchtstift über den Knöpfen
+
+    rows.forEach(function (row, r) {
+      var off = (r % 2 === 1) ? DX / 2 : 0;   // Reihen 2 & 4 versetzt
+      row.forEach(function (note, i) {
+        var x = PAD + R + off + i * DX;
+        var y = PAD + R + r * DY;
+        var key = r + "-" + i;
+        centers[key] = { x: x, y: y };
+
+        var c = document.createElementNS(NS, "circle");
+        c.setAttribute("class", "btn");
+        c.setAttribute("cx", x); c.setAttribute("cy", y); c.setAttribute("r", R);
+        c.dataset.key = key;
+        gBtns.appendChild(c);
+
+        var t = document.createElementNS(NS, "text");
+        t.setAttribute("class", "lbl");
+        t.setAttribute("x", x); t.setAttribute("y", y);
+        t.textContent = note;
+        t.dataset.lblFor = key;
+        gBtns.appendChild(t);
+      });
+    });
+    redraw();
+  }
+
+  function redraw() {
+    var gBtns = svg.querySelector("#gBtns");
+    var gArcs = svg.querySelector("#gArcs");
+
+    // Punkte
+    gBtns.querySelectorAll("circle.dot, circle.pending").forEach(function (n) { n.remove(); });
+    Object.keys(state.filled).forEach(function (key) {
+      if (!centers[key]) return;
+      var p = centers[key];
+      var d = document.createElementNS(NS, "circle");
+      d.setAttribute("class", "dot");
+      d.setAttribute("cx", p.x); d.setAttribute("cy", p.y); d.setAttribute("r", R - 5);
+      gBtns.appendChild(d);
+      var lbl = gBtns.querySelector('text[data-lbl-for="' + key + '"]');
+      if (lbl) lbl.style.display = "none";
+    });
+    gBtns.querySelectorAll("text.lbl").forEach(function (t) {
+      if (!state.filled[t.dataset.lblFor]) t.style.display = "";
+    });
+
+    // Akkordbögen
+    while (gArcs.firstChild) gArcs.removeChild(gArcs.firstChild);
+    state.arcs.forEach(function (arc, idx) {
+      var path = document.createElementNS(NS, "path");
+      path.setAttribute("class", "arc");
+      path.setAttribute("stroke", arc.color);
+      path.setAttribute("d", smoothPath(arc.keys));
+      path.dataset.arc = idx;
+      gArcs.appendChild(path);
+    });
+
+    // Auswahl während Erfassung
+    state.pending.forEach(function (key) {
+      var p = centers[key];
+      if (!p) return;
+      var ring = document.createElementNS(NS, "circle");
+      ring.setAttribute("class", "pending");
+      ring.setAttribute("cx", p.x); ring.setAttribute("cy", p.y); ring.setAttribute("r", R + 5);
+      gBtns.appendChild(ring);
+    });
+  }
+
+  function smoothPath(keys) {
+    var pts = keys.map(function (k) { return centers[k]; }).filter(Boolean);
+    if (pts.length === 0) return "";
+    if (pts.length === 1) {
+      var p = pts[0];
+      return "M " + (p.x - 14) + " " + p.y + " L " + (p.x + 14) + " " + p.y;
+    }
+    var d = "M " + pts[0].x + " " + pts[0].y;
+    for (var i = 1; i < pts.length; i++) {
+      var prev = pts[i - 1], cur = pts[i];
+      var mx = (prev.x + cur.x) / 2;
+      var my = (prev.y + cur.y) / 2 - 26;  // leichter Bogen nach oben
+      d += " Q " + mx + " " + my + " " + cur.x + " " + cur.y;
+    }
+    return d;
+  }
+
+  // ── Interaktion ───────────────────────────
+  svg.addEventListener("click", function (ev) {
+    var el = ev.target;
+
+    if (state.mode === "erase" && el.classList.contains("arc")) {
+      var idx = parseInt(el.dataset.arc, 10);
+      state.undo.push({ type: "arcDel", arc: state.arcs[idx], at: idx });
+      state.arcs.splice(idx, 1);
+      redraw();
+      return;
+    }
+    if (!el.classList.contains("btn")) return;
+    var key = el.dataset.key;
+
+    if (state.mode === "fill") {
+      if (state.filled[key]) { delete state.filled[key]; state.undo.push({ type: "unfill", key: key }); }
+      else { state.filled[key] = true; state.undo.push({ type: "fill", key: key }); }
+      redraw();
+    } else if (state.mode === "arc") {
+      var pos = state.pending.indexOf(key);
+      if (pos >= 0) state.pending.splice(pos, 1);
+      else state.pending.push(key);
+      redraw();
+    } else if (state.mode === "erase") {
+      if (state.filled[key]) {
+        delete state.filled[key];
+        state.undo.push({ type: "unfill", key: key });
+        redraw();
+      }
+    }
+  });
+
+  function setMode(m) {
+    state.mode = m;
+    document.body.dataset.mode = m;
+    document.getElementById("mFill").classList.toggle("active", m === "fill");
+    document.getElementById("mArc").classList.toggle("active", m === "arc");
+    document.getElementById("mErase").classList.toggle("active", m === "erase");
+    document.getElementById("colorField").style.display = (m === "arc") ? "" : "none";
+    if (m !== "arc") { state.pending = []; redraw(); }
+  }
+  document.getElementById("mFill").onclick = function () { setMode("fill"); };
+  document.getElementById("mArc").onclick = function () { setMode("arc"); };
+  document.getElementById("mErase").onclick = function () { setMode("erase"); };
+
+  document.querySelectorAll(".chip").forEach(function (chip) {
+    chip.addEventListener("click", function () {
+      document.querySelectorAll(".chip").forEach(function (c) { c.classList.remove("active"); });
+      chip.classList.add("active");
+      state.color = chip.dataset.c;
+    });
+  });
+
+  document.getElementById("arcDone").onclick = function () {
+    if (state.pending.length >= 1) {
+      var arc = { color: state.color, keys: state.pending.slice() };
+      state.arcs.push(arc);
+      state.undo.push({ type: "arcAdd" });
+    }
+    state.pending = [];
+    redraw();
+  };
+  document.getElementById("arcCancel").onclick = function () {
+    state.pending = [];
+    redraw();
+  };
+
+  document.getElementById("btnUndo").onclick = function () {
+    var a = state.undo.pop();
+    if (!a) return;
+    if (a.type === "fill") delete state.filled[a.key];
+    else if (a.type === "unfill") state.filled[a.key] = true;
+    else if (a.type === "arcAdd") state.arcs.pop();
+    else if (a.type === "arcDel") state.arcs.splice(a.at, 0, a.arc);
+    redraw();
+  };
+
+  document.getElementById("btnClear").onclick = function () {
+    if (!confirm("Wirklich alle Markierungen löschen?")) return;
+    state.filled = {};
+    state.arcs = [];
+    state.pending = [];
+    state.undo = [];
+    redraw();
+  };
+
+  // ── Kopf (Titel / Bass) ───────────────────
+  var inpTitle = document.getElementById("inpTitle");
+  var inpBass = document.getElementById("inpBass");
+  inpTitle.addEventListener("input", function () {
+    document.getElementById("outTitle").textContent = inpTitle.value;
+  });
+  inpBass.addEventListener("input", function () {
+    document.getElementById("outBass").textContent = inpBass.value;
+  });
+
+  document.getElementById("selSystem").addEventListener("change", function (ev) {
+    state.system = ev.target.value;
+    build();
+  });
+
+  // ── Speichern / Öffnen ────────────────────
+  document.getElementById("btnSave").onclick = function () {
+    var data = {
+      title: inpTitle.value,
+      bass: inpBass.value,
+      system: state.system,
+      filled: Object.keys(state.filled),
+      arcs: state.arcs
+    };
+    var blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = (inpTitle.value || "lied") + ".json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  document.getElementById("btnLoad").onclick = function () {
+    document.getElementById("fileLoad").click();
+  };
+  document.getElementById("fileLoad").addEventListener("change", function (ev) {
+    var f = ev.target.files[0];
+    if (!f) return;
+    var reader = new FileReader();
+    reader.onload = function () {
+      try {
+        var d = JSON.parse(reader.result);
+        inpTitle.value = d.title || "";
+        inpBass.value = d.bass || "";
+        document.getElementById("outTitle").textContent = inpTitle.value;
+        document.getElementById("outBass").textContent = inpBass.value;
+        state.system = d.system || "C";
+        document.getElementById("selSystem").value = state.system;
+        state.filled = {};
+        (d.filled || []).forEach(function (k) { state.filled[k] = true; });
+        state.arcs = d.arcs || [];
+        state.undo = [];
+        build();
+      } catch (e) {
+        alert("Datei konnte nicht gelesen werden.");
+      }
+    };
+    reader.readAsText(f);
+    ev.target.value = "";
+  });
+
+  document.getElementById("btnPrint").onclick = function () { window.print(); };
+
+  build();
+})();
+</script>
+</body>
+</html>
