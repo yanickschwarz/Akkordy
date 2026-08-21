@@ -110,7 +110,7 @@
   /* ── Blatt ───────────────────────────────── */
   .sheet {
     background: #fff;
-    max-width: 1160px;
+    max-width: 860px;
     margin: 14px auto 40px;
     padding: 28px 32px 36px;
     border: 1px solid var(--line);
@@ -152,7 +152,7 @@
   }
   text.lbl {
     font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-    font-size: 13px;
+    font-size: 15px;
     text-anchor: middle;
     dominant-baseline: central;
     pointer-events: none;
@@ -160,10 +160,10 @@
   }
   path.arc {
     fill: none;
-    stroke-width: 15;
+    stroke-width: 27;
     stroke-linecap: round;
     stroke-linejoin: round;
-    opacity: .55;
+    opacity: .6;
   }
   body[data-mode="erase"] path.arc { cursor: pointer; pointer-events: stroke; }
   body:not([data-mode="erase"]) path.arc { pointer-events: none; }
@@ -179,10 +179,14 @@
   body[data-mode="erase"]  circle.btn { cursor: cell; }
 
   /* ── Druck ───────────────────────────────── */
-  @page { size: A4 landscape; margin: 10mm; }
+  @page { size: A4 portrait; margin: 12mm; }
   @media print {
     body { background: #fff; }
     header.toolbar, .hint { display: none !important; }
+    .sheet, svg#board {
+      print-color-adjust: exact;
+      -webkit-print-color-adjust: exact;
+    }
     .sheet {
       border: none;
       box-shadow: none;
@@ -246,9 +250,9 @@
 </header>
 
 <p class="hint">
-  <strong>So geht’s:</strong> ① Knöpfe anklicken = schwarz ausfüllen (nochmals klicken = weg).
+  <strong>So geht’s:</strong> ① Die schwarzen Knöpfe sind fix vorbelegt. Zusätzliche Knöpfe anklicken = schwarz ausfüllen (nochmals klicken = weg).
   ② «Akkord markieren»: Farbe wählen, 2–3 Knöpfe nacheinander antippen, «Fertig» drücken → breiter Farbstrich.
-  ③ Liedname und Bass-Angabe oben eintragen. ④ «Drucken / PDF» → als PDF sichern oder direkt ausdrucken (A4 quer).
+  ③ Liedname und Bass-Angabe oben eintragen. ④ «Drucken / PDF» → als PDF sichern oder direkt ausdrucken (A4 hoch).
 </p>
 
 <main class="sheet">
@@ -263,44 +267,43 @@
 (function () {
   "use strict";
 
-  // ── Tastatur-Layouts (Diskant, 5 Reihen) ──────────────
+  // ── Tastatur-Layouts (Diskant, 5 Reihen, 12 Knöpfe) ───
   // Reihenfolge der drei Tonfamilien unterscheidet C- und B-Griff.
-  // Jede Reihe: Startton + Aufwärtsschritte in kleinen Terzen.
-  var FAM = {
-    A: ["e","g","ais","cis","e","g","ais","cis","e","g","ais","cis","e","g"],          // e-Reihe
-    B: ["fis","a","c","dis","fis","a","c","dis","fis","a","c","dis","fis","a"],        // fis-Reihe
-    C: ["f","gis","h","d","f","gis","h","d","f","gis","h","d","f","gis"]               // f-Reihe
-  };
-  // Oktav-Striche (′) je Position, passend zur Vorlage des Kunden
-  function withPrimes(seq, firstPrimeAt) {
-    var out = [], primes = 0;
-    for (var i = 0; i < seq.length; i++) {
-      if (i >= firstPrimeAt && (i - firstPrimeAt) % 4 === 0) primes++;
-      out.push(seq[i] + "\u2032".repeat(primes));
-    }
-    return out;
-  }
-  var ROW_A = withPrimes(FAM.A, 3); // ais cis′ …
-  var ROW_B = withPrimes(FAM.B, 2); // c′ …
-  var ROW_C = withPrimes(FAM.C, 3); // d′ …
+  var P = "\u2032"; // Oktavstrich ′
+  var ROW_E  = ["e","g","ais","cis"+P,"e"+P,"g"+P,"ais"+P,"cis"+P+P,"e"+P+P,"g"+P+P,"ais"+P+P,"cis"+P+P+P];
+  var ROW_E2 = ["g","ais","cis"+P,"e"+P,"g"+P,"ais"+P,"cis"+P+P,"e"+P+P,"g"+P+P,"ais"+P+P,"cis"+P+P+P,"e"+P+P+P];
+  var ROW_FIS= ["fis","a","c"+P,"dis"+P,"fis"+P,"a"+P,"c"+P+P,"dis"+P+P,"fis"+P+P,"a"+P+P,"c"+P+P+P,"dis"+P+P+P];
+  var ROW_F  = ["f","gis","h","d"+P,"f"+P,"gis"+P,"h"+P,"d"+P+P,"f"+P+P,"gis"+P+P,"h"+P+P,"d"+P+P+P];
 
   function layoutFor(system) {
     if (system === "B") {
       // B-Griff: Reihe 2 = f-Familie, Reihe 3 = fis-Familie
-      return [ROW_A, ROW_C, ROW_B, ROW_A.slice(1).concat([""]).filter(Boolean), ROW_C];
+      return [ROW_E, ROW_F, ROW_FIS, ROW_E2, ROW_F];
     }
     // C-Griff (wie Vorlage): Reihe 2 = fis-Familie, Reihe 3 = f-Familie
-    return [ROW_A, ROW_B, ROW_C, ROW_A.slice(1), ROW_B];
+    return [ROW_E, ROW_FIS, ROW_F, ROW_E2, ROW_FIS];
+  }
+
+  // Halbtöne (…is) sind auf dem Instrument schwarz → fix vorbelegt
+  function isBlack(note) { return note.indexOf("is") !== -1; }
+  function baseFill(system) {
+    var filled = {};
+    layoutFor(system).forEach(function (row, r) {
+      row.forEach(function (note, i) {
+        if (isBlack(note)) filled[r + "-" + i] = true;
+      });
+    });
+    return filled;
   }
 
   // ── Geometrie ─────────────────────────────
-  var R = 21, DX = 58, DY = 56, PAD = 30;
+  var R = 27, DX = 68, DY = 66, PAD = 26;
   var svg = document.getElementById("board");
   var NS = "http://www.w3.org/2000/svg";
 
   var state = {
     system: "C",
-    filled: {},        // key "r-i" -> true
+    filled: baseFill("C"),        // key "r-i" -> true
     arcs: [],          // {color, keys:[...]}
     pending: [],       // keys während Akkord-Erfassung
     color: "#7fd6a2",
@@ -402,10 +405,7 @@
     }
     var d = "M " + pts[0].x + " " + pts[0].y;
     for (var i = 1; i < pts.length; i++) {
-      var prev = pts[i - 1], cur = pts[i];
-      var mx = (prev.x + cur.x) / 2;
-      var my = (prev.y + cur.y) / 2 - 26;  // leichter Bogen nach oben
-      d += " Q " + mx + " " + my + " " + cur.x + " " + cur.y;
+      d += " L " + pts[i].x + " " + pts[i].y;
     }
     return d;
   }
@@ -489,7 +489,7 @@
 
   document.getElementById("btnClear").onclick = function () {
     if (!confirm("Wirklich alle Markierungen löschen?")) return;
-    state.filled = {};
+    state.filled = baseFill(state.system);
     state.arcs = [];
     state.pending = [];
     state.undo = [];
@@ -508,6 +508,10 @@
 
   document.getElementById("selSystem").addEventListener("change", function (ev) {
     state.system = ev.target.value;
+    state.filled = baseFill(state.system);
+    state.arcs = [];
+    state.pending = [];
+    state.undo = [];
     build();
   });
 
