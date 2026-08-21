@@ -110,7 +110,7 @@
   /* ── Blatt ───────────────────────────────── */
   .sheet {
     background: #fff;
-    max-width: 860px;
+    max-width: 1180px;
     margin: 14px auto 40px;
     padding: 28px 32px 36px;
     border: 1px solid var(--line);
@@ -138,6 +138,58 @@
   .sheet-head .t:empty::before { content: "Liedname"; color: #c8c6bf; }
 
   svg#board { width: 100%; height: auto; display: block; touch-action: manipulation; }
+
+  /* ── Liedtext ────────────────────────────── */
+  #lyrics { margin: 0 0 10px; }
+  .sec { margin-bottom: 14px; position: relative; }
+  .sec input.sec-title {
+    display: block;
+    width: 100%;
+    border: none;
+    border-bottom: 1px dashed var(--line);
+    background: transparent;
+    font-family: inherit;
+    font-size: 17px;
+    font-weight: 700;
+    padding: 2px 28px 4px 0;
+    outline: none;
+  }
+  .sec textarea.sec-text {
+    display: block;
+    width: 100%;
+    border: none;
+    background: transparent;
+    font-family: inherit;
+    font-size: 15px;
+    line-height: 1.45;
+    padding: 6px 0 0;
+    resize: none;
+    overflow: hidden;
+    outline: none;
+    min-height: 24px;
+  }
+  .sec .sec-del {
+    position: absolute;
+    top: 0; right: 0;
+    border: none;
+    background: transparent;
+    color: #b0aea6;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 2px 4px;
+  }
+  .sec .sec-del:hover { color: #c0392b; }
+  #btnAddSec {
+    font-size: 13px;
+    padding: 6px 12px;
+    border: 1px dashed var(--line);
+    background: transparent;
+    border-radius: 6px;
+    cursor: pointer;
+    color: #6b6a63;
+    margin-bottom: 16px;
+  }
+  #btnAddSec:hover { border-color: var(--ink); color: var(--ink); }
 
   circle.btn {
     fill: #fff;
@@ -195,6 +247,10 @@
       padding: 0;
     }
     circle.btn:hover { stroke-width: 1.6; }
+    .sec .sec-del, #btnAddSec { display: none !important; }
+    .sec input.sec-title { border-bottom: none; }
+    .sec input::placeholder, .sec textarea::placeholder { color: transparent; }
+    .sec.is-empty { display: none; }
   }
 </style>
 </head>
@@ -260,6 +316,8 @@
     <div class="t" id="outTitle"></div>
     <div class="b" id="outBass"></div>
   </div>
+  <div id="lyrics"></div>
+  <button id="btnAddSec" type="button">+ Textabschnitt hinzufügen</button>
   <svg id="board" xmlns="http://www.w3.org/2000/svg"></svg>
 </main>
 
@@ -493,6 +551,7 @@
     state.arcs = [];
     state.pending = [];
     state.undo = [];
+    lyricsBox.innerHTML = "";
     redraw();
   };
 
@@ -515,6 +574,56 @@
     build();
   });
 
+  // ── Liedtext-Abschnitte ───────────────────
+  var lyricsBox = document.getElementById("lyrics");
+
+  function autoGrow(ta) {
+    ta.style.height = "auto";
+    ta.style.height = ta.scrollHeight + "px";
+  }
+  function markEmpty(sec) {
+    var t = sec.querySelector(".sec-title").value.trim();
+    var x = sec.querySelector(".sec-text").value.trim();
+    sec.classList.toggle("is-empty", !t && !x);
+  }
+  function addSection(title, text) {
+    var sec = document.createElement("div");
+    sec.className = "sec";
+    sec.innerHTML =
+      '<button class="sec-del" type="button" title="Abschnitt entfernen">×</button>' +
+      '<input class="sec-title" type="text" placeholder="Abschnitt (z. B. Strophe 1, Refrain)">' +
+      '<textarea class="sec-text" rows="1" placeholder="Liedtext …"></textarea>';
+    var inp = sec.querySelector(".sec-title");
+    var ta = sec.querySelector(".sec-text");
+    inp.value = title || "";
+    ta.value = text || "";
+    inp.addEventListener("input", function () { markEmpty(sec); });
+    ta.addEventListener("input", function () { autoGrow(ta); markEmpty(sec); });
+    sec.querySelector(".sec-del").addEventListener("click", function () {
+      if (inp.value.trim() || ta.value.trim()) {
+        if (!confirm("Diesen Textabschnitt entfernen?")) return;
+      }
+      sec.remove();
+    });
+    lyricsBox.appendChild(sec);
+    autoGrow(ta);
+    markEmpty(sec);
+    return sec;
+  }
+  function readSections() {
+    var out = [];
+    lyricsBox.querySelectorAll(".sec").forEach(function (sec) {
+      var t = sec.querySelector(".sec-title").value;
+      var x = sec.querySelector(".sec-text").value;
+      if (t.trim() || x.trim()) out.push({ t: t, x: x });
+    });
+    return out;
+  }
+  document.getElementById("btnAddSec").addEventListener("click", function () {
+    var sec = addSection("", "");
+    sec.querySelector(".sec-title").focus();
+  });
+
   // ── Speichern / Öffnen ────────────────────
   document.getElementById("btnSave").onclick = function () {
     var data = {
@@ -522,7 +631,8 @@
       bass: inpBass.value,
       system: state.system,
       filled: Object.keys(state.filled),
-      arcs: state.arcs
+      arcs: state.arcs,
+      lyrics: readSections()
     };
     var blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     var a = document.createElement("a");
@@ -551,6 +661,8 @@
         (d.filled || []).forEach(function (k) { state.filled[k] = true; });
         state.arcs = d.arcs || [];
         state.undo = [];
+        lyricsBox.innerHTML = "";
+        (d.lyrics || []).forEach(function (secData) { addSection(secData.t, secData.x); });
         build();
       } catch (e) {
         alert("Datei konnte nicht gelesen werden.");
